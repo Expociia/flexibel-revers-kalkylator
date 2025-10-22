@@ -36,6 +36,16 @@
     .accent{color:var(--orange)} .hint{font-size:12px;color:#6b4c4c;margin-top:8px}
     .chartbox{height:360px;position:relative;background:#fff7f0;border:1px solid #f2e3da;border-radius:12px;padding:10px}
     @media (max-width:980px){ .wrap{grid-template-columns:1fr} }
+    .login-wrap{display:flex;align-items:center;justify-content:center;min-height:calc(100vh - 80px);padding:16px}
+    .login-card{max-width:360px;width:100%}
+    .login-card h1{margin-top:0;margin-bottom:12px}
+    .login-card .row{margin-bottom:14px}
+    .session-controls{margin-left:auto;display:none;align-items:center;gap:10px}
+    .session-controls.active{display:flex}
+    .error{color:#c0392b;font-size:12px;margin-top:8px}
+    .fader{opacity:0;transition:opacity .35s ease}
+    .fader.shown{opacity:1}
+    .hidden{display:none!important}
   </style>
 </head>
 <body>
@@ -45,9 +55,28 @@
       <img src="img/Fastighetsbyran_rgb_svart.png" alt="Fastighetsbyrån"/>
     </div>
     <div class="title">Flexibel revers – interaktiv kalkyl (Fastighetsbyrån)</div>
+    <div class="session-controls" id="sessionControls">
+      <span class="pill hidden" id="activeProfile"></span>
+      <button class="btn" type="button" id="logoutBtn">Logga ut</button>
+    </div>
   </div>
 
-  <div class="wrap">
+  <div id="loginScreen" class="login-wrap fader shown">
+    <div class="card pad login-card">
+      <h1>Logga in</h1>
+      <p class="muted" style="margin-top:0">Ange ditt lösenord för att komma åt kalkylatorn.</p>
+      <form id="loginForm">
+        <div class="row">
+          <label for="loginPassword">Lösenord</label>
+          <input type="password" id="loginPassword" autocomplete="current-password" required />
+        </div>
+        <button type="submit" class="btn" style="width:100%">Logga in</button>
+        <div id="loginError" class="error hidden">Fel lösenord, försök igen.</div>
+      </form>
+    </div>
+  </div>
+
+  <div class="wrap hidden fader" id="calculatorWrap">
     <div class="card pad">
       <h1>Antaganden</h1>
 
@@ -192,6 +221,96 @@
 
     // Element
     const $ = (id) => document.getElementById(id);
+    const loginScreen = $('loginScreen');
+    const calculatorWrap = $('calculatorWrap');
+    const loginForm = $('loginForm');
+    const loginPassword = $('loginPassword');
+    const loginError = $('loginError');
+    const sessionControls = $('sessionControls');
+    const activeProfile = $('activeProfile');
+    const logoutBtn = $('logoutBtn');
+
+    const PROFILE_STORAGE_KEY = 'flexibelReversSession';
+    // Observera: hashade lösenord nedan motsvarar TeamA123, Board2024! respektive Growth55
+    const profileConfigs = {
+      '8500f588d2e6350a6287f3a5e91d9d96eafd69bea5311af5e62959795bea968b': {
+        label:'Team A',
+        companyValue:8000000,
+        companyDebt:500000,
+        turnover:13453000,
+        margin:19.4,
+        corpTax:20.6,
+        ownership:16,
+        calcNoteFromEquity:true,
+        amortShare:50,
+        rate:2,
+        interestOnly:true,
+        maxYears:15,
+        lockCompanyFields:true
+      },
+      '6d3e84209b4b7369a11152676031f24f88a4a6612688700b854bb20d9a4c5f4a': {
+        label:'Styrelse',
+        companyValue:14000000,
+        companyDebt:3000000,
+        turnover:21500000,
+        margin:17.5,
+        corpTax:20.6,
+        ownership:25,
+        calcNoteFromEquity:false,
+        note:1800000,
+        amortShare:60,
+        rate:2.8,
+        interestOnly:false,
+        maxYears:12,
+        lockCompanyFields:false
+      },
+      'fe5c6340cfc5d49e57e0a127780ad3ba202815c4606974c2c77dc25561bf33cc': {
+        label:'Tillväxt-case',
+        companyValue:9500000,
+        companyDebt:1200000,
+        turnover:16200000,
+        margin:22.0,
+        corpTax:20.6,
+        ownership:35,
+        calcNoteFromEquity:true,
+        amortShare:55,
+        rate:3.2,
+        interestOnly:true,
+        maxYears:10,
+        lockCompanyFields:false
+      }
+    };
+    let activeProfileHash = null;
+
+    function showWithFade(el) {
+      if (!el || !el.classList.contains('fader')) {
+        return;
+      }
+      el.classList.remove('hidden');
+      requestAnimationFrame(() => {
+        el.classList.add('shown');
+      });
+    }
+
+    function hideWithFade(el) {
+      if (!el || !el.classList.contains('fader') || el.classList.contains('hidden')) {
+        return;
+      }
+      el.classList.remove('shown');
+      el.addEventListener('transitionend', () => {
+        el.classList.add('hidden');
+      }, { once:true });
+    }
+
+    async function hashPassword(password) {
+      if (!window.crypto || !window.crypto.subtle) {
+        throw new Error('Web Crypto API saknas');
+      }
+      const utf8 = new TextEncoder().encode(password);
+      const hashBuffer = await window.crypto.subtle.digest('SHA-256', utf8);
+      return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
     const companyValue = $('companyValue');
     const companyDebt  = $('companyDebt');
     const equityTag    = $('equityTag');
@@ -221,6 +340,104 @@
     const reset        = $('reset');
     const calcNoteFromEquity = $('calcNoteFromEquity');
     const lockCompanyFields  = $('lockCompanyFields');
+
+    function applyProfile(profile) {
+      if (!profile) return;
+
+      if (profile.calcNoteFromEquity !== undefined) {
+        calcNoteFromEquity.checked = profile.calcNoteFromEquity;
+      }
+      if (profile.lockCompanyFields !== undefined) {
+        lockCompanyFields.checked = profile.lockCompanyFields;
+      }
+      if (profile.companyValue !== undefined) {
+        companyValue.value = profile.companyValue;
+      }
+      if (profile.companyDebt !== undefined) {
+        companyDebt.value = profile.companyDebt;
+      }
+      if (profile.turnover !== undefined) {
+        turnover.value = profile.turnover;
+      }
+      if (profile.margin !== undefined) {
+        margin.value = profile.margin;
+      }
+      if (profile.corpTax !== undefined) {
+        corpTax.value = profile.corpTax;
+      }
+      if (profile.ownership !== undefined) {
+        ownership.value = profile.ownership;
+      }
+      if (profile.note !== undefined) {
+        note.value = profile.note;
+      }
+      if (profile.amortShare !== undefined) {
+        amortShare.value = profile.amortShare;
+      }
+      if (profile.rate !== undefined) {
+        rate.value = profile.rate;
+      }
+      if (profile.interestOnly !== undefined) {
+        interestOnly.checked = profile.interestOnly;
+      }
+      if (profile.maxYears !== undefined) {
+        maxYears.value = profile.maxYears;
+      }
+
+      update();
+    }
+
+    function showCalculator(profileHash) {
+      const profile = profileConfigs[profileHash];
+      if (!profile) {
+        return;
+      }
+      activeProfileHash = profileHash;
+      applyProfile(profile);
+      localStorage.setItem(PROFILE_STORAGE_KEY, profileHash);
+      if (loginForm) {
+        loginForm.reset();
+      }
+      if (loginError) {
+        loginError.textContent = 'Fel lösenord, försök igen.';
+        loginError.classList.add('hidden');
+      }
+      hideWithFade(loginScreen);
+      showWithFade(calculatorWrap);
+      if (sessionControls) {
+        sessionControls.classList.add('active');
+      }
+      if (activeProfile) {
+        activeProfile.textContent = profile.label || 'Aktiv profil';
+        activeProfile.classList.remove('hidden');
+      }
+    }
+
+    function showLogin(clearSession = false) {
+      if (clearSession) {
+        localStorage.removeItem(PROFILE_STORAGE_KEY);
+        activeProfileHash = null;
+      }
+      hideWithFade(calculatorWrap);
+      showWithFade(loginScreen);
+      if (sessionControls) {
+        sessionControls.classList.remove('active');
+      }
+      if (activeProfile) {
+        activeProfile.textContent = '';
+        activeProfile.classList.add('hidden');
+      }
+      if (loginError) {
+        loginError.textContent = 'Fel lösenord, försök igen.';
+        loginError.classList.add('hidden');
+      }
+      if (loginForm) {
+        loginForm.reset();
+      }
+      if (loginPassword) {
+        setTimeout(() => loginPassword.focus(), 300);
+      }
+    }
 
     // Graf
     let chart;
@@ -333,6 +550,50 @@
       );
     }
 
+    if (loginForm) {
+      loginForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const password = (loginPassword.value || '').trim();
+        if (!password) {
+          if (loginPassword) loginPassword.focus();
+          return;
+        }
+        try {
+          const hash = await hashPassword(password);
+          if (profileConfigs[hash]) {
+            showCalculator(hash);
+          } else if (loginError) {
+            loginError.textContent = 'Fel lösenord, försök igen.';
+            loginError.classList.remove('hidden');
+            if (loginPassword) {
+              loginPassword.select();
+            }
+          }
+        } catch (err) {
+          if (loginError) {
+            loginError.textContent = 'Din webbläsare stödjer tyvärr inte inloggningen.';
+            loginError.classList.remove('hidden');
+          }
+          console.error(err);
+        }
+      });
+    }
+
+    if (loginPassword) {
+      loginPassword.addEventListener('input', () => {
+        if (loginError) {
+          loginError.textContent = 'Fel lösenord, försök igen.';
+          loginError.classList.add('hidden');
+        }
+      });
+    }
+
+    if (logoutBtn) {
+      logoutBtn.addEventListener('click', () => {
+        showLogin(true);
+      });
+    }
+
     [companyValue, companyDebt, ownership, turnover, margin, corpTax, note, amortShare, rate, interestOnly, maxYears].forEach(el => {
       el.addEventListener('input', update);
       el.addEventListener('change', update);
@@ -351,6 +612,25 @@
       lockCompanyFields.checked  = true; // default: låsta
       update();
     });
+
+    const savedHash = localStorage.getItem(PROFILE_STORAGE_KEY);
+    if (savedHash && profileConfigs[savedHash]) {
+      showCalculator(savedHash);
+    } else {
+      if (sessionControls) {
+        sessionControls.classList.remove('active');
+      }
+      if (activeProfile) {
+        activeProfile.textContent = '';
+        activeProfile.classList.add('hidden');
+      }
+      if (loginScreen) {
+        showWithFade(loginScreen);
+      }
+      if (loginPassword) {
+        setTimeout(() => loginPassword.focus(), 300);
+      }
+    }
 
     update();
   </script>
