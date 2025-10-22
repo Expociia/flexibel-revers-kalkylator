@@ -5,12 +5,20 @@
     {
       "src": "flexibel_revers_demo.html",
       "use": "@vercel/static"
+    },
+    {
+      "src": "img/**",
+      "use": "@vercel/static"
     }
   ],
   "routes": [
     {
       "src": "/",
       "dest": "/flexibel_revers_demo.html"
+    },
+    {
+      "src": "/img/(.*)",
+      "dest": "/img/$1"
     }
   ]
 }
