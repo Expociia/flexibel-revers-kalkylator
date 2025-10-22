@@ -1,0 +1,13 @@
+{
+  "name": "flexibel-revers-kalkylator",
+  "version": "1.0.0",
+  "description": "Interaktiv kalkylator för flexibel revers - Fastighetsbyrån",
+  "main": "flexibel_revers_demo.html",
+  "scripts": {
+    "build": "echo 'No build step required'",
+    "start": "echo 'Static site - serve files directly'"
+  },
+  "keywords": ["fastighetsbyrån", "revers", "kalkylator", "finans"],
+  "author": "Fastighetsbyrån",
+  "license": "MIT"
+}

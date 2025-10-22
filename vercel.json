@@ -1,0 +1,16 @@
+{
+  "name": "flexibel-revers-kalkylator",
+  "version": 2,
+  "builds": [
+    {
+      "src": "flexibel_revers_demo.html",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/",
+      "dest": "/flexibel_revers_demo.html"
+    }
+  ]
+}
