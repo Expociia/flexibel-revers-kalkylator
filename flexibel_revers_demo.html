@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Flexibel revers – interaktiv kalkyl (Fastighetsbyrån)</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root{
+      --orange:#ff5f00; --bark:#512b2b; --apricot:#fdf6ee; --thistle:#fbf3f7;
+      --white:#ffffff; --turquoise:#31a3ae; --teal:#257886;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;color:var(--bark);background:var(--apricot)}
+    .topbar{display:flex;align-items:center;gap:14px;padding:14px 18px;background:var(--white);border-bottom:1px solid #eee;position:sticky;top:0;z-index:10}
+    .brand img{height:38px;width:auto}
+    .title{font-weight:700;font-size:18px}
+    .wrap{max-width:1200px;margin:16px auto;padding:0 16px;display:grid;grid-template-columns:360px 1fr;gap:16px}
+    .card{background:var(--white);border:1px solid #eee;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.06)}
+    .pad{padding:16px} h1{font-size:20px;margin:0 0 12px;color:var(--bark)}
+    .row{margin-bottom:12px} label{display:block;font-size:12px;color:#6b4c4c;margin-bottom:6px}
+    input[type=number]{width:100%;padding:10px 12px;border-radius:10px;border:1px solid #e6d9d3;background:#fff;color:var(--bark)}
+    input[disabled]{background:#f7f2ef;color:#9b7e7e}
+    .slider{display:flex;align-items:center;gap:8px} input[type=range]{width:100%}
+    .pill{background:var(--thistle);padding:10px 12px;border-radius:12px;font-size:13px;border:1px solid #f0e6ee}
+    .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+    .muted{color:#7d5f5f} .switch{display:flex;gap:8px;align-items:center}
+    .tablewrap{overflow:auto;border-radius:12px;border:1px solid #eee;background:#fff}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:8px 10px;font-size:12px;text-align:right}
+    th{text-align:left;background:#faf7f4;color:#5b3e3e;position:sticky;top:0}
+    tr:nth-child(even){background:#fff7f0}
+    .tag{font-size:11px;color:#8e6f6f}
+    .btn{cursor:pointer;padding:8px 10px;border-radius:10px;border:1px solid #e6d9d3;background:#fff;color:#5a2d15}
+    .accent{color:var(--orange)} .hint{font-size:12px;color:#6b4c4c;margin-top:8px}
+    .chartbox{height:360px;position:relative;background:#fff7f0;border:1px solid #f2e3da;border-radius:12px;padding:10px}
+    @media (max-width:980px){ .wrap{grid-template-columns:1fr} }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">
+      <!-- Byt LOGO_URL_HERE till publik URL för Fastighetsbyråns logotyp -->
+      <img src="img/Fastighetsbyran_rgb_svart.png" alt="Fastighetsbyrån"/>
+    </div>
+    <div class="title">Flexibel revers – interaktiv kalkyl (Fastighetsbyrån)</div>
+  </div>
+
+  <div class="wrap">
+    <div class="card pad">
+      <h1>Antaganden</h1>
+
+      <div class="row">
+        <label>Bolagsvärde (kr)</label>
+        <input type="number" id="companyValue" value="8000000" />
+      </div>
+
+      <div class="row">
+        <label>Lån (kr)</label>
+        <input type="number" id="companyDebt" value="500000" />
+        <div class="tag" id="equityTag">Eget kapital: 7 500 000 kr</div>
+      </div>
+
+
+      <div class="row">
+        <label>Omsättning: <span id="turnoverLbl" class="accent">13 453 000 kr</span></label>
+        <input type="number" id="turnover" value="13453000" />
+      </div>
+
+      <div class="row">
+        <label>Vinstmarginal: <span id="marginLbl" class="accent">19,4%</span></label>
+        <div class="slider"><input type="range" id="margin" min="0" max="100" step="0.1" value="19.4"/></div>
+      </div>
+
+      <div class="row">
+        <label>Bolagets resultat före skatt: <span id="resultBeforeTaxLbl" class="accent">—</span></label>
+      </div>
+
+      <div class="row">
+        <label>Bolagsskatt: <span id="taxLbl" class="accent">20,6%</span></label>
+        <div class="slider"><input type="range" id="corpTax" min="10" max="30" step="0.1" value="20.6" disabled/></div>
+      </div>
+
+      <div class="row">
+        <label>Bolagets resultat efter skatt: <span id="resultAfterTaxLbl" class="accent">—</span></label>
+      </div>
+
+      <div class="row">
+        <label>Ägarandel: <span id="ownershipLbl" class="accent">16%</span></label>
+        <div class="slider"><input type="range" id="ownership" min="1" max="100" step="1" value="16"/></div>
+      </div>
+
+      <div class="row">
+        <label>Revers (kr)</label>
+        <input type="number" id="note" value="1200000" />
+      </div>
+
+      <div class="row switch">
+        <input type="checkbox" id="calcNoteFromEquity" checked />
+        <label for="calcNoteFromEquity" style="margin:0">Beräkna revers från eget kapital (andel × eget kapital)</label>
+      </div>
+
+      <div class="row">
+        <label>Andel av utdelning som amorteras: <span id="amortShareLbl" class="accent">50%</span></label>
+        <div class="slider"><input type="range" id="amortShare" min="0" max="100" step="1" value="50"/></div>
+      </div>
+
+      <div class="row">
+        <label>Ränta på revers: <span id="rateLbl" class="accent">2,0%</span></label>
+        <div class="slider"><input type="range" id="rate" min="0" max="15" step="0.1" value="2"/></div>
+      </div>
+
+      <div class="row switch">
+        <input type="checkbox" id="interestOnly" checked />
+        <label for="interestOnly" style="margin:0">Första året amorteringsfritt</label>
+      </div>
+
+      <div class="row">
+        <label>Max antal år att simulera: <span id="yearsLbl" class="accent">15</span></label>
+        <div class="slider"><input type="range" id="maxYears" min="1" max="30" step="1" value="15"/></div>
+      </div>
+
+      <div class="row"><button class="btn" id="reset">Återställ</button></div>
+
+      <p class="hint">
+        Antar att vald andel av delägarens bruttoutdelning går till amortering av reversen.
+        Ränta dras från kassautdelningen. År 1 kan göras amorteringsfritt.
+      </p>
+
+      <div class="row switch" style="margin-top:8px">
+        <input type="checkbox" id="lockCompanyFields" checked />
+        <label for="lockCompanyFields" style="margin:0">Lås bolagsvärde och lån</label>
+      </div>
+    </div>
+
+    <div class="card pad">
+      <div style="font-weight:700; font-size:18px; margin-bottom:10px">Summering</div>
+      <div class="grid" style="margin-bottom:12px">
+        <div class="pill"><div class="muted">Delägarens utdelning/år</div><div id="divPerYear" style="font-size:18px;font-weight:700">—</div></div>
+        <div class="pill"><div class="muted">År 1 – amortering</div><div id="y1Amort" style="font-size:18px;font-weight:700">—</div></div>
+        <div class="pill"><div class="muted">År 1 – kassautdelning</div><div id="y1Cash" style="font-size:18px;font-weight:700">—</div></div>
+        <div class="pill"><div class="muted">År till helt återbetald</div><div id="yearsToZero" style="font-size:18px;font-weight:700">—</div></div>
+      </div>
+      <div class="grid" style="margin-bottom:12px">
+        <div class="pill"><div class="muted">Delägarens andel av resultat (före skatt)</div><div id="ownerSharePBT" style="font-size:18px;font-weight:700">—</div></div>
+      </div>
+
+      <div class="chartbox"><canvas id="chart"></canvas></div>
+
+      <div style="font-weight:700; font-size:18px; margin-top:14px">Tabell (till och med första året med endast kassautdelning)</div>
+      <div class="tablewrap">
+        <table id="tbl">
+          <thead>
+            <tr><th>År</th><th>Utdelning</th><th>Amortering</th><th>Ränta</th><th>Kassautd.</th><th>Kvar skuld</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Hjälpfunktion för kronor
+    const fmtKr = (n) => (Math.round(n)).toLocaleString('sv-SE') + ' kr';
+
+    // Beräkning
+    function simulate(opts) {
+      const years = [];
+      let remaining = opts.notePrincipal;
+      let y = 0;
+      while (y < opts.maxYears && remaining > 1) {
+        y++;
+        const profitAfterTax = opts.profitBeforeTax * (1 - opts.corpTaxRate);
+        const ownerDividend   = profitAfterTax * opts.ownership;
+        const interest        = remaining * opts.interestRate;
+        const canAmortize     = (opts.firstYearInterestOnly && y === 1) ? 0 : ownerDividend * opts.amortShare;
+        const principal       = Math.min(canAmortize, remaining);
+        remaining             = Math.max(0, remaining - principal);
+        const cashPayout      = Math.max(0, ownerDividend - principal - interest);
+        years.push({ year:y, ownerDividend, principalPayment:principal, interest, cashPayout, remaining });
+      }
+      // Lägg till ett extra pedagogiskt år med enbart kassautdelning om skulden är noll
+      if (remaining <= 1) {
+        const profitAfterTax = opts.profitBeforeTax * (1 - opts.corpTaxRate);
+        const ownerDividend   = profitAfterTax * opts.ownership;
+        const cashPayout      = Math.max(0, ownerDividend); // ingen ränta, ingen amortering
+        years.push({ year: years.length ? years[years.length-1].year + 1 : 1, ownerDividend, principalPayment:0, interest:0, cashPayout, remaining:0 });
+      }
+      return years;
+    }
+
+    // Element
+    const $ = (id) => document.getElementById(id);
+    const companyValue = $('companyValue');
+    const companyDebt  = $('companyDebt');
+    const equityTag    = $('equityTag');
+    const ownership    = $('ownership');
+    const ownershipLbl = $('ownershipLbl');
+    const turnover    = $('turnover');
+    const turnoverLbl = $('turnoverLbl');
+    const margin      = $('margin');
+    const marginLbl   = $('marginLbl');
+    const corpTax      = $('corpTax');
+    const taxLbl       = $('taxLbl');
+    const note         = $('note');
+    const amortShare   = $('amortShare');
+    const amortShareLbl= $('amortShareLbl');
+    const rate         = $('rate');
+    const rateLbl      = $('rateLbl');
+    const interestOnly = $('interestOnly');
+    const maxYears     = $('maxYears');
+    const yearsLbl     = $('yearsLbl');
+    const divPerYear   = $('divPerYear');
+    const y1Amort      = $('y1Amort');
+    const y1Cash       = $('y1Cash');
+    const yearsToZero  = $('yearsToZero');
+    const ownerSharePBT = $('ownerSharePBT');
+    const resultAfterTaxLbl = $('resultAfterTaxLbl');
+    const resultBeforeTaxLbl = $('resultBeforeTaxLbl');
+    const reset        = $('reset');
+    const calcNoteFromEquity = $('calcNoteFromEquity');
+    const lockCompanyFields  = $('lockCompanyFields');
+
+    // Graf
+    let chart;
+    function buildChart(labels, amort, interest, cash, remain) {
+      const ctx = document.getElementById('chart');
+      if (!chart) {
+        chart = new Chart(ctx, {
+          type: 'bar',
+          data: { labels, datasets: [
+            { label:'Amortering',    data: amort,   stack:'stack', backgroundColor:'#31a3ae' },
+            { label:'Ränta',         data: interest,stack:'stack', backgroundColor:'#257886' },
+            { label:'Kassautdelning',data: cash,    stack:'stack', backgroundColor:'#ff5f00' },
+            { label:'Kvarvarande skuld', type:'line', yAxisID:'y1',
+              data: remain, borderWidth:2, pointRadius:2, borderColor:'#512b2b', tension:.2 }
+          ]},
+          options: {
+            responsive:true, maintainAspectRatio:false,
+            scales:{ y:{ stacked:true }, y1:{ position:'right', grid:{ drawOnChartArea:false } } },
+            plugins:{ legend:{ labels:{ boxWidth:12 } },
+              tooltip:{ callbacks:{ label:(ctx)=> ctx.dataset.label+': '+(Math.round(ctx.parsed.y)).toLocaleString('sv-SE')+' kr' } } }
+          }
+        });
+      } else {
+        chart.data.labels = labels;
+        chart.data.datasets[0].data = amort;
+        chart.data.datasets[1].data = interest;
+        chart.data.datasets[2].data = cash;
+        chart.data.datasets[3].data = remain;
+        chart.update();
+      }
+    }
+
+    // Uppdatering
+    function update() {
+      const inputs = {
+        companyValue: Number(companyValue.value||0),
+        companyDebt:  Number(companyDebt.value||0),
+        ownership:    Number(ownership.value)/100,
+        turnover:     Number(turnover.value||0),
+        margin:       Number(margin.value)/100,  // rörelsemarginal/vinstmarginal
+        corpTaxRate:  Number(corpTax.value)/100,
+        notePrincipal:Number(note.value||0),
+        amortShare:   Number(amortShare.value)/100,
+        interestRate: Number(rate.value)/100,
+        firstYearInterestOnly: interestOnly.checked,
+        maxYears:     Number(maxYears.value||1)
+      };
+
+      // Härleder resultat före skatt från omsättning * marginal
+      inputs.profitBeforeTax = inputs.turnover * inputs.margin;
+      resultBeforeTaxLbl.textContent = fmtKr(inputs.profitBeforeTax);
+
+      const equity = inputs.companyValue - inputs.companyDebt;
+      equityTag.textContent = 'Eget kapital: ' + equity.toLocaleString('sv-SE') + ' kr';
+
+      // Lås/öppna bolagsvärde & lån
+      companyValue.disabled = lockCompanyFields.checked;
+      companyDebt.disabled  = lockCompanyFields.checked;
+
+      // Auto-beräkna revers från eget kapital vid behov
+      if (calcNoteFromEquity.checked) {
+        const autoNote = Math.max(0, equity * inputs.ownership);
+        note.value = Math.round(autoNote);
+        inputs.notePrincipal = Number(note.value||0);
+        note.disabled = true;
+      } else {
+        note.disabled = false;
+      }
+
+      ownershipLbl.textContent = Math.round(inputs.ownership*100) + '%';
+      turnoverLbl.textContent = (Math.round(inputs.turnover)).toLocaleString('sv-SE') + ' kr';
+      marginLbl.textContent = (inputs.margin*100).toFixed(1).replace('.', ',') + '%';
+      taxLbl.textContent = (inputs.corpTaxRate*100).toFixed(1).replace('.', ',') + '%';
+      amortShareLbl.textContent = Math.round(inputs.amortShare*100) + '%';
+      rateLbl.textContent = (inputs.interestRate*100).toFixed(1).replace('.', ',') + '%';
+      yearsLbl.textContent = inputs.maxYears;
+
+      const data = simulate(inputs);
+
+      const ownerDiv = inputs.profitBeforeTax*(1-inputs.corpTaxRate)*inputs.ownership;
+      const companyProfitAfterTax = inputs.profitBeforeTax * (1 - inputs.corpTaxRate);
+      ownerSharePBT.textContent = fmtKr(inputs.profitBeforeTax * inputs.ownership);
+      resultAfterTaxLbl.textContent = fmtKr(companyProfitAfterTax);
+      divPerYear.textContent = fmtKr(ownerDiv);
+      y1Amort.textContent = data[0] ? fmtKr(data[0].principalPayment) : '—';
+      y1Cash.textContent  = data[0] ? fmtKr(data[0].cashPayout)       : '—';
+      const idxPaid = data.findIndex(r => r.remaining === 0);
+      yearsToZero.textContent = (idxPaid !== -1) ? idxPaid : '>' + inputs.maxYears;
+
+      const tbody = document.querySelector('#tbl tbody');
+      tbody.innerHTML = '';
+      data.forEach(r => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td style="text-align:left">${r.year}</td>
+                        <td>${fmtKr(r.ownerDividend)}</td>
+                        <td>${fmtKr(r.principalPayment)}</td>
+                        <td>${fmtKr(r.interest)}</td>
+                        <td>${fmtKr(r.cashPayout)}</td>
+                        <td>${fmtKr(r.remaining)}</td>`;
+        tbody.appendChild(tr);
+      });
+
+      const labels = data.map(r=> 'År ' + r.year);
+      buildChart(
+        labels,
+        data.map(r=> Math.round(r.principalPayment)),
+        data.map(r=> Math.round(r.interest)),
+        data.map(r=> Math.round(r.cashPayout)),
+        data.map(r=> Math.round(r.remaining))
+      );
+    }
+
+    [companyValue, companyDebt, ownership, turnover, margin, corpTax, note, amortShare, rate, interestOnly, maxYears].forEach(el => {
+      el.addEventListener('input', update);
+      el.addEventListener('change', update);
+    });
+
+    [calcNoteFromEquity, lockCompanyFields].forEach(el => {
+      el.addEventListener('input', update);
+      el.addEventListener('change', update);
+    });
+
+    reset.addEventListener('click', () => {
+      companyValue.value = 8000000; companyDebt.value = 500000; ownership.value = 16;
+      turnover.value = 13453000; margin.value = 19.4; corpTax.value = 20.6; note.value = 1200000; amortShare.value = 50;
+      rate.value = 2; interestOnly.checked = true; maxYears.value = 15;
+      calcNoteFromEquity.checked = true; // default: beräkna från eget kapital
+      lockCompanyFields.checked  = true; // default: låsta
+      update();
+    });
+
+    update();
+  </script>
+</body>
+</html>
