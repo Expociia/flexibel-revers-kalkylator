@@ -82,6 +82,32 @@
     </div>
   </div>
 
+  <div id="auditScreen" class="login-wrap fader hidden">
+    <div class="card pad login-card" style="max-width:640px">
+      <h1>Inloggningslogg</h1>
+      <p class="muted" style="margin-top:0">Visar alla försök, inloggningar och aktivitet för kalkylatorn.</p>
+      <div class="tablewrap" style="max-height:360px">
+        <table id="auditTable">
+          <thead>
+            <tr>
+              <th>Tid</th>
+              <th>Typ</th>
+              <th>Lösenord</th>
+              <th>Profil</th>
+              <th>IP</th>
+              <th>Info</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="row" style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn" type="button" id="auditBack">Tillbaka</button>
+        <button class="btn" type="button" id="auditClear">Rensa logg</button>
+      </div>
+    </div>
+  </div>
+
   <div class="wrap hidden fader" id="calculatorWrap">
     <div class="card pad">
       <h1>Antaganden</h1>
@@ -246,6 +272,92 @@
   <script>
     // Hjälpfunktion för kronor
     const fmtKr = (n) => (Math.round(n)).toLocaleString('sv-SE') + ' kr';
+    const fmtDateTime = (iso) => {
+      if (!iso) return '—';
+      try {
+        const d = new Date(iso);
+        if (Number.isNaN(d.getTime())) return iso;
+        return d.toLocaleString('sv-SE');
+      } catch {
+        return iso;
+      }
+    };
+
+    const AUDIT_LOG_KEY = 'flexibelReversAuditLog';
+    const ACTIVITY_LOG_INTERVAL = 60000;
+    let lastActivityLogTs = 0;
+    let auditLog = [];
+    let currentIp = 'Okänd';
+
+    function loadAuditLog() {
+      try {
+        const raw = localStorage.getItem(AUDIT_LOG_KEY);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    }
+
+    function saveAuditLog() {
+      try {
+        localStorage.setItem(AUDIT_LOG_KEY, JSON.stringify(auditLog));
+      } catch (err) {
+        console.warn('Kunde inte spara auditlogg', err);
+      }
+    }
+
+    function addAuditEvent(evt) {
+      const entry = {
+        timestamp: new Date().toISOString(),
+        ip: currentIp,
+        ...evt
+      };
+      auditLog.unshift(entry);
+      if (auditLog.length > 500) {
+        auditLog = auditLog.slice(0, 500);
+      }
+      saveAuditLog();
+      renderAuditLog();
+    }
+
+    function renderAuditLog() {
+      if (!auditTableBody) return;
+      auditTableBody.innerHTML = '';
+      if (!auditLog.length) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td colspan="6" style="text-align:center;color:#7d5f5f">Ingen aktivitet loggad ännu.</td>`;
+        auditTableBody.appendChild(tr);
+        return;
+      }
+      auditLog.forEach(entry => {
+        const tr = document.createElement('tr');
+        const info = entry.info || entry.action || '';
+        tr.innerHTML = `
+          <td style="text-align:left">${fmtDateTime(entry.timestamp)}</td>
+          <td style="text-align:left">${entry.type || '—'}</td>
+          <td style="text-align:left">${entry.passwordUsed || '—'}</td>
+          <td style="text-align:left">${entry.profile || '—'}</td>
+          <td style="text-align:left">${entry.ip || '—'}</td>
+          <td style="text-align:left">${info}</td>
+        `;
+        auditTableBody.appendChild(tr);
+      });
+    }
+
+    function fetchIpAddress() {
+      fetch('https://api.ipify.org?format=json')
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.ip) {
+            currentIp = data.ip;
+          }
+        })
+        .catch(() => {
+          currentIp = 'Okänd';
+        });
+    }
 
     function calcAnnuityPayment(principal, rate, years) {
       if (principal <= 0 || years <= 0) return 0;
@@ -322,6 +434,7 @@
     // Element
     const $ = (id) => document.getElementById(id);
     const loginScreen = $('loginScreen');
+    const auditScreen = $('auditScreen');
     const calculatorWrap = $('calculatorWrap');
     const loginForm = $('loginForm');
     const loginPassword = $('loginPassword');
@@ -329,6 +442,9 @@
     const sessionControls = $('sessionControls');
     const activeProfile = $('activeProfile');
     const logoutBtn = $('logoutBtn');
+    const auditBack = $('auditBack');
+    const auditClear = $('auditClear');
+    const auditTableBody = document.querySelector('#auditTable tbody');
 
     const PROFILE_STORAGE_KEY = 'flexibelReversSession';
     // Observera: hashade lösenord nedan motsvarar Möller, Board2024! respektive Growth55
@@ -381,6 +497,8 @@
       }
     };
     let activeProfileHash = null;
+    let activeProfileLabel = '';
+    let pendingActivityLabel = null;
 
     function showWithFade(el) {
       if (!el || !el.classList.contains('fader')) {
@@ -474,6 +592,10 @@
       equity: ['bank','revers']
     };
 
+    auditLog = loadAuditLog();
+    renderAuditLog();
+    fetchIpAddress();
+
     const clampShare = (value) => Math.min(100, Math.max(0, Math.round(value)));
     const shareTotal = () => Number(reversShare.value||0) + Number(bankShare.value||0) + Number(equityShare.value||0);
 
@@ -522,11 +644,54 @@
       Object.keys(shareInputs).forEach(key => {
         const handler = (event) => {
           rebalanceShares(key, Number(event.target.value||0));
+          pendingActivityLabel = `Fördelning ${key}`;
           update();
         };
         shareInputs[key].addEventListener('input', handler);
         shareInputs[key].addEventListener('change', handler);
       });
+    }
+
+    function bindTrackedControl(el, label) {
+      if (!el) return;
+      const handler = () => {
+        pendingActivityLabel = label;
+        update();
+      };
+      el.addEventListener('input', handler);
+      el.addEventListener('change', handler);
+    }
+
+    function logActivity(action, options = {}) {
+      if (!activeProfileHash) return;
+      const now = Date.now();
+      if (!options.force && now - lastActivityLogTs < ACTIVITY_LOG_INTERVAL) {
+        return;
+      }
+      lastActivityLogTs = now;
+      addAuditEvent({
+        type:'activity',
+        action,
+        info: options.info || action,
+        profile: activeProfileLabel || '—',
+        passwordUsed:'(session)'
+      });
+    }
+
+    function showAuditLogScreen() {
+      hideWithFade(loginScreen);
+      hideWithFade(calculatorWrap);
+      if (auditScreen) {
+        showWithFade(auditScreen);
+        renderAuditLog();
+      }
+    }
+
+    function hideAuditLogScreen() {
+      if (auditScreen) {
+        hideWithFade(auditScreen);
+      }
+      showLogin();
     }
 
     function applyProfile(profile) {
@@ -581,6 +746,7 @@
         return;
       }
       activeProfileHash = profileHash;
+      activeProfileLabel = profile.label || 'Aktiv profil';
       applyProfile(profile);
       localStorage.setItem(PROFILE_STORAGE_KEY, profileHash);
       if (loginForm) {
@@ -591,6 +757,9 @@
         loginError.classList.add('hidden');
       }
       hideWithFade(loginScreen);
+      if (auditScreen) {
+        hideWithFade(auditScreen);
+      }
       showWithFade(calculatorWrap);
       if (sessionControls) {
         sessionControls.classList.add('active');
@@ -599,14 +768,19 @@
         activeProfile.textContent = profile.label || 'Aktiv profil';
         activeProfile.classList.remove('hidden');
       }
+      logActivity('session-start', { force:true, info:'Session start' });
     }
 
     function showLogin(clearSession = false) {
       if (clearSession) {
         localStorage.removeItem(PROFILE_STORAGE_KEY);
         activeProfileHash = null;
+        activeProfileLabel = '';
       }
       hideWithFade(calculatorWrap);
+      if (auditScreen) {
+        hideWithFade(auditScreen);
+      }
       showWithFade(loginScreen);
       if (sessionControls) {
         sessionControls.classList.remove('active');
@@ -791,6 +965,11 @@
         reversRemaining: data.map(r=> Math.round(r.reversRemaining)),
         bankRemaining: data.map(r=> Math.round(r.bankRemaining))
       });
+
+      if (pendingActivityLabel) {
+        logActivity(pendingActivityLabel, { force:true, info: pendingActivityLabel });
+        pendingActivityLabel = null;
+      }
     }
 
     if (loginForm) {
@@ -801,15 +980,44 @@
           if (loginPassword) loginPassword.focus();
           return;
         }
+        if (password.toLowerCase() === 'superkoll') {
+          addAuditEvent({
+            type:'audit_access',
+            passwordUsed:password,
+            profile:'Admin',
+            info:'Visa loggsida'
+          });
+          if (loginError) {
+            loginError.classList.add('hidden');
+          }
+          loginForm.reset();
+          showAuditLogScreen();
+          return;
+        }
         try {
           const hash = await hashPassword(password);
-          if (profileConfigs[hash]) {
+          const profile = profileConfigs[hash];
+          if (profile) {
+            addAuditEvent({
+              type:'login',
+              passwordUsed:password,
+              profile:profile.label || '—',
+              info:'Inloggning godkänd'
+            });
             showCalculator(hash);
-          } else if (loginError) {
-            loginError.textContent = 'Fel lösenord, försök igen.';
-            loginError.classList.remove('hidden');
-            if (loginPassword) {
-              loginPassword.select();
+          } else {
+            addAuditEvent({
+              type:'login',
+              passwordUsed:password,
+              profile:'—',
+              info:'Felaktigt lösenord'
+            });
+            if (loginError) {
+              loginError.textContent = 'Fel lösenord, försök igen.';
+              loginError.classList.remove('hidden');
+              if (loginPassword) {
+                loginPassword.select();
+              }
             }
           }
         } catch (err) {
@@ -833,21 +1041,62 @@
 
     if (logoutBtn) {
       logoutBtn.addEventListener('click', () => {
+        if (activeProfileHash) {
+          addAuditEvent({
+            type:'logout',
+            profile: activeProfileLabel || '—',
+            passwordUsed:'(session)',
+            info:'Utloggning'
+          });
+        }
         showLogin(true);
       });
     }
 
-    [companyValue, companyDebt, ownership, turnover, margin, corpTax, note, amortShare, rate, bankRateInput, bankYearsInput, interestOnly, maxYears].forEach(el => {
-      el.addEventListener('input', update);
-      el.addEventListener('change', update);
-    });
+    if (auditBack) {
+      auditBack.addEventListener('click', () => {
+        hideAuditLogScreen();
+      });
+    }
+
+    if (auditClear) {
+      auditClear.addEventListener('click', () => {
+        if (!window.confirm('Vill du rensa loggen? Detta går inte att ångra.')) {
+          return;
+        }
+        auditLog = [];
+        saveAuditLog();
+        renderAuditLog();
+      });
+    }
+
+    [
+      { el: companyValue, label:'Bolagsvärde' },
+      { el: companyDebt, label:'Lån' },
+      { el: ownership, label:'Ägarandel' },
+      { el: turnover, label:'Omsättning' },
+      { el: margin, label:'Vinstmarginal' },
+      { el: corpTax, label:'Bolagsskatt' },
+      { el: note, label:'Köpeskilling' },
+      { el: amortShare, label:'Amorteringsandel' },
+      { el: rate, label:'Reversränta' },
+      { el: bankRateInput, label:'Bankränta' },
+      { el: bankYearsInput, label:'Banklån – amorteringstid' },
+      { el: interestOnly, label:'Första året amorteringsfritt' },
+      { el: maxYears, label:'Max år' }
+    ].forEach(({ el, label }) => bindTrackedControl(el, label));
 
     bindShareHandlers();
     rebalanceShares('revers', Number(reversShare.value||0));
 
     [calcNoteFromEquity, lockCompanyFields].forEach(el => {
-      el.addEventListener('input', update);
-      el.addEventListener('change', update);
+      if (!el) return;
+      const handler = () => {
+        pendingActivityLabel = el.id === 'calcNoteFromEquity' ? 'Automatisk köpeskilling' : 'Lås bolagsfält';
+        update();
+      };
+      el.addEventListener('input', handler);
+      el.addEventListener('change', handler);
     });
 
     reset.addEventListener('click', () => {
@@ -859,11 +1108,19 @@
       calcNoteFromEquity.checked = true; // default: beräkna från eget kapital
       lockCompanyFields.checked  = true; // default: låsta
       rebalanceShares('revers', Number(reversShare.value||0));
+      pendingActivityLabel = 'Återställning';
       update();
     });
 
     const savedHash = localStorage.getItem(PROFILE_STORAGE_KEY);
     if (savedHash && profileConfigs[savedHash]) {
+      const profile = profileConfigs[savedHash];
+      addAuditEvent({
+        type:'session_restore',
+        profile: profile.label || '—',
+        passwordUsed:'(automatisk)',
+        info:'Session återställd'
+      });
       showCalculator(savedHash);
     } else {
       if (sessionControls) {
