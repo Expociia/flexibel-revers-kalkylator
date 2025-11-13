@@ -203,7 +203,7 @@
 
       <div class="row switch">
         <input type="checkbox" id="interestOnly" checked />
-        <label for="interestOnly" style="margin:0">Första året amorteringsfritt</label>
+        <label for="interestOnly" style="margin:0">Första årets revers amorteringsfritt</label>
       </div>
 
       <div class="row">
@@ -377,6 +377,8 @@
       const bankPayment    = (opts.bankAmortYears > 0)
         ? calcAnnuityPayment(opts.bankPrincipal, opts.bankInterestRate, opts.bankAmortYears)
         : 0;
+      let reversPayoffYear = null;
+      let bankPayoffYear = null;
 
       while (y < opts.maxYears && (reversRemaining > 1 || bankRemaining > 1)) {
         y++;
@@ -384,6 +386,9 @@
         const canAmortize    = (opts.firstYearInterestOnly && y === 1) ? 0 : ownerDividend * opts.amortShare;
         const reversPrincipalPayment = Math.min(canAmortize, reversRemaining);
         reversRemaining = Math.max(0, reversRemaining - reversPrincipalPayment);
+        if (reversRemaining <= 1 && reversPayoffYear === null) {
+          reversPayoffYear = y;
+        }
 
         let bankInterest = bankRemaining > 1 ? bankRemaining * opts.bankInterestRate : 0;
         let bankPrincipalPayment = 0;
@@ -397,6 +402,9 @@
             bankPrincipalPayment = Math.min(bankRemaining, bankRemaining / yearsLeft);
           }
           bankRemaining = Math.max(0, bankRemaining - bankPrincipalPayment);
+          if (bankRemaining <= 1 && bankPayoffYear === null) {
+            bankPayoffYear = y;
+          }
         } else {
           bankInterest = 0;
         }
@@ -428,7 +436,7 @@
           bankRemaining:0
         });
       }
-      return { years, bankPayment };
+      return { years, bankPayment, reversPayoffYear, bankPayoffYear };
     }
 
     // Element
@@ -462,7 +470,10 @@
         rate:2,
         interestOnly:true,
         maxYears:15,
-        lockCompanyFields:true
+        lockCompanyFields:true,
+        bankRate:5,
+        bankYears:5,
+        fundingMix:{ revers:60, bank:30, equity:10 }
       },
       '6d3e84209b4b7369a11152676031f24f88a4a6612688700b854bb20d9a4c5f4a': {
         label:'Styrelse',
@@ -478,22 +489,28 @@
         rate:2.8,
         interestOnly:false,
         maxYears:12,
-        lockCompanyFields:false
+        lockCompanyFields:false,
+        bankRate:5,
+        bankYears:5,
+        fundingMix:{ revers:60, bank:30, equity:10 }
       },
-      'fe5c6340cfc5d49e57e0a127780ad3ba202815c4606974c2c77dc25561bf33cc': {
-        label:'Tillväxt-case',
-        companyValue:9500000,
-        companyDebt:1200000,
-        turnover:16200000,
-        margin:22.0,
+      '27e489b46f3f3a0dd60ea70dca574894aceab19c9328ba8a2bed6721f571d944': {
+        label:'Bergman',
+        companyValue:8000000,
+        companyDebt:500000,
+        turnover:13453000,
+        margin:19.4,
         corpTax:20.6,
-        ownership:35,
+        ownership:10,
         calcNoteFromEquity:true,
-        amortShare:55,
-        rate:3.2,
+        amortShare:50,
+        rate:2,
         interestOnly:true,
-        maxYears:10,
-        lockCompanyFields:false
+        maxYears:15,
+        lockCompanyFields:true,
+        bankRate:5,
+        bankYears:5,
+        fundingMix:{ revers:45, bank:45, equity:10 }
       }
     };
     let activeProfileHash = null;
@@ -736,6 +753,25 @@
       if (profile.maxYears !== undefined) {
         maxYears.value = profile.maxYears;
       }
+      if (profile.bankRate !== undefined) {
+        bankRateInput.value = profile.bankRate;
+      }
+      if (profile.bankYears !== undefined) {
+        bankYearsInput.value = profile.bankYears;
+      }
+      if (profile.fundingMix) {
+        const mix = profile.fundingMix;
+        if (mix.revers !== undefined) {
+          setShareValue('revers', mix.revers);
+        }
+        if (mix.bank !== undefined) {
+          setShareValue('bank', mix.bank);
+        }
+        if (mix.equity !== undefined) {
+          setShareValue('equity', mix.equity);
+        }
+        rebalanceShares('revers', Number(reversShare.value||0));
+      }
 
       update();
     }
@@ -920,6 +956,8 @@
 
       const schedule = simulate(inputs);
       const data = schedule.years;
+      const reversPayoffYear = schedule.reversPayoffYear;
+      const bankPayoffYear = schedule.bankPayoffYear;
       bankPaymentSummary.textContent = schedule.bankPayment ? fmtKr(schedule.bankPayment) : '—';
 
       const ownerDiv = inputs.profitBeforeTax*(1-inputs.corpTaxRate)*inputs.ownership;
@@ -930,12 +968,12 @@
       y1Amort.textContent = data[0] ? fmtKr(data[0].reversPrincipalPayment) : '—';
       y1BankAmort.textContent = data[0] ? fmtKr(data[0].bankPrincipalPayment) : '—';
       y1Cash.textContent  = data[0] ? fmtKr(data[0].cashPayout)       : '—';
-      const reversPaidRow = data.find(r => r.reversRemaining === 0);
-      const bankPaidRow   = data.find(r => r.bankRemaining === 0);
-      reversYearsToZero.textContent = (inputs.reversPrincipal <= 1) ? '0'
-        : (reversPaidRow ? reversPaidRow.year : '>' + inputs.maxYears);
-      bankYearsToZero.textContent = (inputs.bankPrincipal <= 1) ? '0'
-        : (bankPaidRow ? bankPaidRow.year : '>' + inputs.maxYears);
+      const reversYearsValue = (inputs.reversPrincipal <= 1) ? '0'
+        : (reversPayoffYear ? reversPayoffYear : '>' + inputs.maxYears);
+      const bankYearsValue = (inputs.bankPrincipal <= 1) ? '0'
+        : (bankPayoffYear ? bankPayoffYear : '>' + inputs.maxYears);
+      reversYearsToZero.textContent = reversYearsValue;
+      bankYearsToZero.textContent = bankYearsValue;
 
       const tbody = document.querySelector('#tbl tbody');
       tbody.innerHTML = '';
@@ -1082,7 +1120,7 @@
       { el: rate, label:'Reversränta' },
       { el: bankRateInput, label:'Bankränta' },
       { el: bankYearsInput, label:'Banklån – amorteringstid' },
-      { el: interestOnly, label:'Första året amorteringsfritt' },
+      { el: interestOnly, label:'Första årets revers amorteringsfritt' },
       { el: maxYears, label:'Max år' }
     ].forEach(({ el, label }) => bindTrackedControl(el, label));
 
