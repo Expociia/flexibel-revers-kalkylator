@@ -283,6 +283,7 @@
     };
 
     const AUDIT_LOG_KEY = 'flexibelReversAuditLog';
+    // Admin-lösenord hash (SHA-256) - inget lösenord i klartext
     const ADMIN_AUDIT_HASH = '3aa6481ae1ce42b4e20ee59e601fa321b0da519a47582fa92faae9aa212962a5';
     const ACTIVITY_LOG_INTERVAL = 60000;
     let lastActivityLogTs = 0;
@@ -454,6 +455,9 @@
     const auditTableBody = document.querySelector('#auditTable tbody');
 
     const PROFILE_STORAGE_KEY = 'flexibelReversSession';
+    // OBS: Alla lösenord lagras endast som SHA-256 hashar för säkerhet.
+    // Inga lösenord ska finnas i klartext i källkoden.
+    // För att generera en hash: använd hashPassword() funktionen eller SHA-256 direkt.
     const profileConfigs = {
       'eb78163e7d1c1aa49f4c6c3fe830550d7467f08eb28b735ac813b0041c8f7ecc': {
         label:'Joackim',
